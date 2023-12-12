@@ -213,6 +213,18 @@ void non_uniform_tri(std::vector<double> &coords_out,
   triangle_wrap(points, segs, {}, 0, flags.c_str(), coords_out, tris_out);
 }
 
+void make_unit_circle(uint N, std::vector<double> & coords, std::vector<uint> & segs )
+// generate a N-polygon approximating a unit circle centered at the origin
+{
+  coords.resize(0);
+  segs.resize(0);
+  for (uint i=0;i<N;i++) {
+    coords.push_back(cos(i*2*M_PI/N)); 
+    coords.push_back(sin(i*2*M_PI/N));
+    segs.push_back(i);segs.push_back((i+1)%N);
+  }
+}
+
 void make_domain(std::vector<double> &coords_out, std::vector<uint> &tris_out,
                  const double max_area, const double min_angle = 20) {
   std::string flags =
@@ -220,6 +232,49 @@ void make_domain(std::vector<double> &coords_out, std::vector<uint> &tris_out,
   triangle_wrap({0, 0, 1, 0, 1, 1, 0, 1}, {0, 1, 1, 2, 2, 3, 3, 0}, {}, 0,
                 flags.c_str(), coords_out, tris_out);
 }
+
+void make_domain(const std::vector<double> &coords_in, const std::vector<uint> &segs_in,
+                  std::vector<double> &coords_out, std::vector<uint> &tris_out,
+                  const double max_area, const double min_angle = 20) {
+  std::string flags =
+      "Qq" + std::to_string(min_angle) + "a" + std::to_string(max_area);
+  triangle_wrap(coords_in, segs_in, {}, 0, flags.c_str(), coords_out, tris_out);
+}
+
+void make_disk(uint N,std::vector<double> &coords_out, std::vector<uint> &tris_out)
+{
+  std::vector<double> coords; 
+  std::vector<uint> segs;
+  make_unit_circle(N,coords,segs);
+  make_domain(coords,segs,coords_out,tris_out,sqrt(3)*M_PI/(N*N),20);
+}
+
+void twist_disk(double delta, std::vector<double> &coords_out)
+{
+  uint n=coords_out.size()/3;
+  for (uint i=0;i<n;i++) {
+    double x = coords_out[3*i], y = coords_out[3*i+1];
+    double rho = sqrt(x*x+y*y);
+    double theta = atan2(y,x)+delta*rho;
+    coords_out[3*i] = rho * cos(theta);
+    coords_out[3*i+1] = rho * sin(theta);
+  }
+}
+
+void write_soup(const char *filename,const vector<double> &coords, const vector<uint> &tris)
+{
+  ofstream f(filename);
+  uint ntris = tris.size()/3;
+  f << ntris << endl;
+  for (int i=0;i<ntris;i++ ) {
+    f << coords[3*tris[3*i]] << " " << coords[3*tris[3*i]+1] << " "
+      << coords[3*tris[3*i+1]] << " " << coords[3*tris[3*i+1]+1] << " "
+      << coords[3*tris[3*i+2]] << " " << coords[3*tris[3*i+2]+1] 
+      << endl;
+  }
+  f.close();
+}
+
 //::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 void make_grid(std::vector<double> &coords_out, std::vector<uint> &tris_out,
                int N) {
@@ -258,8 +313,10 @@ void make_triangulation(std::vector<double> &coords_out,
     non_uniform_tri(coords_out, tris_out, N);
     break;
   case 3:
-    anisotropic_tri(coords_out, tris_out, N,
-                    min_angle, y_anisotropy);
+    anisotropic_tri(coords_out, tris_out, N, min_angle, y_anisotropy);
+    break;
+  case 4:
+    make_disk(N,coords_out,tris_out);
     break;
   }
 }
@@ -272,17 +329,22 @@ int main(int argc, char **argv) {
   std::vector<uint> tris_out;
   std::vector<uint> quads{};
   uint N = 10;  // default
-  double anisotropy = 1;
-  if (argc > 1) {
-    N = std::stoi(argv[1]);
-  }
-  if (argc > 2) {
-    anisotropy = std::stod(argv[2]);
-  }
-  make_triangulation(coords_out, tris_out, 3, N, anisotropy);
-  std::string name = "/home/federico/Documents/Estimators/sources/Planes/plane_"
-    + std::to_string(N)
-    + "_a" + std::to_string(static_cast<int>(anisotropy))
-    + ".obj";
+  double delta = 10;
+  uint n_disks = 1;
+  if (argc > 1) N = std::stoi(argv[1]);
+  if (argc > 2) delta = std::stod(argv[2]);
+  if (argc > 3) n_disks = std::stod(argv[3]);
+  make_triangulation(coords_out, tris_out, 4, N, delta);
+  std::string namebase = "../output/disk" + std::to_string(N);
+  std::string name = namebase  + ".obj";
   write_OBJ(name.c_str(), coords_out, tris_out, quads);
+  name = namebase  + ".msh";
+  write_soup(name.c_str(), coords_out, tris_out);
+  for (uint i=0;i<n_disks;i++) {
+    twist_disk(delta*M_PI/180.0,coords_out);
+    name = namebase + "_t" + std::to_string(static_cast<int>(delta*(i+1))) + ".obj";
+    write_OBJ(name.c_str(), coords_out, tris_out, quads);
+    name = namebase + "_t" + std::to_string(static_cast<int>(delta*(i+1))) + ".msh";
+    write_soup(name.c_str(), coords_out, tris_out);
+  }
 }
