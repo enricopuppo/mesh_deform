@@ -261,6 +261,21 @@ void twist_disk(double delta, std::vector<double> &coords_out)
   }
 }
 
+void dilate_sin(double amp, std::vector<double> &coords_out)
+{
+  uint n=coords_out.size()/3;
+  for (uint i=0;i<n;i++) {
+    double x = coords_out[3*i], y = coords_out[3*i+1];
+    double theta = atan2(y,x);
+    double rho = sqrt(x*x+y*y);
+    if (rho>0) rho += amp*(1-fabs(rho-0.5))*sin(18*theta);
+    coords_out[3*i] = rho * cos(theta);
+    coords_out[3*i+1] = rho * sin(theta);
+  }
+}
+
+
+
 void write_soup(const char *filename,const vector<double> &coords, const vector<uint> &tris)
 {
   ofstream f(filename);
@@ -331,9 +346,11 @@ int main(int argc, char **argv) {
   uint N = 10;  // default
   double delta = 10;
   uint n_disks = 1;
+  double amp = 0;
   if (argc > 1) N = std::stoi(argv[1]);
   if (argc > 2) delta = std::stod(argv[2]);
-  if (argc > 3) n_disks = std::stod(argv[3]);
+  if (argc > 3) n_disks = std::stoi(argv[3]);
+  if (argc > 4) amp = std::stod(argv[4]);
   make_triangulation(coords_out, tris_out, 4, N, delta);
   std::string namebase = "../output/disk" + std::to_string(N);
   std::string name = namebase  + ".obj";
@@ -342,6 +359,7 @@ int main(int argc, char **argv) {
   write_soup(name.c_str(), coords_out, tris_out);
   for (uint i=0;i<n_disks;i++) {
     twist_disk(delta*M_PI/180.0,coords_out);
+    if (amp>0) dilate_sin(amp,coords_out);
     name = namebase + "_t" + std::to_string(static_cast<int>(delta*(i+1))) + ".obj";
     write_OBJ(name.c_str(), coords_out, tris_out, quads);
     name = namebase + "_t" + std::to_string(static_cast<int>(delta*(i+1))) + ".msh";
